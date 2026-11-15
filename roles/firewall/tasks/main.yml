@@ -1,0 +1,52 @@
+---
+- name: Установить nftables
+  ansible.builtin.apt:
+    name: [nftables, util-linux]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Создать каталог firewall
+  ansible.builtin.file:
+    path: /var/lib/awg-firewall
+    state: directory
+    mode: "0700"
+
+- name: Установить скрипты firewall
+  ansible.builtin.template:
+    src: "{{ item }}.sh.j2"
+    dest: "/var/lib/awg-firewall/{{ item }}.sh"
+    mode: "0700"
+  loop: [rollback, commit]
+
+- name: Подготовить и проверить правила
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /var/lib/awg-firewall/candidate.conf
+    mode: "0600"
+    validate: /usr/sbin/nft -c -f %s
+  register: firewall_candidate
+
+- name: Проверить сохранённые правила
+  ansible.builtin.stat:
+    path: /etc/nftables.conf
+    checksum_algorithm: sha1
+  register: firewall_persistent
+
+- name: Проверить незавершённый откат
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+  loop: [awg-firewall-rollback.timer, awg-firewall-rollback.service]
+  register: firewall_pending
+  changed_when: false
+  failed_when: firewall_pending.status.ActiveState | default('inactive') in ['active', 'activating']
+
+- name: Применить firewall
+  ansible.builtin.include_tasks: apply.yml
+  when: firewall_candidate.changed or not firewall_persistent.stat.exists or firewall_persistent.stat.checksum != firewall_candidate.checksum
+
+- name: Включить службу nftables
+  ansible.builtin.systemd_service:
+    name: nftables
+    enabled: true
+    state: started

@@ -1,0 +1,4 @@
+{% for key, value in awg_obfuscation.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+HeaderProtectionKey = {{ awg_registry.headers[awg_profile] }}

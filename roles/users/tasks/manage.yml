@@ -1,0 +1,13 @@
+---
+- name: Выполнить операцию с клиентами
+  vars:
+    users_requested_operations: "{{ ansible_run_tags | intersect(['client_add', 'client_remove', 'client_list', 'client_export']) }}"
+    users_operation: "{{ users_requested_operations[0] | default('') | regex_replace('^client_', '') }}"
+  block:
+    - name: Выбрать одну операцию
+      ansible.builtin.assert:
+        that: users_requested_operations | length == 1
+        fail_msg: "Укажите один тег: client_add, client_remove, client_list или client_export."
+
+    - name: Обновить клиентов
+      ansible.builtin.import_tasks: main.yml

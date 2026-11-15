@@ -1,0 +1,82 @@
+---
+- name: Установить зависимости сборки
+  ansible.builtin.apt:
+    name: [ca-certificates, git, build-essential, dkms, libelf-dev, "linux-headers-{{ ansible_facts.kernel }}"]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Получить исходники AWG
+  ansible.builtin.git:
+    repo: "https://github.com/amnezia-vpn/{{ item.repo }}.git"
+    dest: "{{ item.dest }}"
+    version: "{{ item.commit }}"
+  loop:
+    - repo: amneziawg-tools
+      dest: "{{ awg_tools_source }}"
+      commit: "{{ awg_tools_commit }}"
+    - repo: amneziawg-linux-kernel-module
+      dest: "{{ awg_kernel_source }}"
+      commit: "{{ awg_kernel_commit }}"
+  loop_control:
+    label: "{{ item.repo }}"
+
+- name: Собрать утилиты AWG
+  community.general.make:
+    chdir: "{{ awg_tools_source }}/src"
+
+- name: Установить утилиты и службы AWG
+  ansible.builtin.copy:
+    src: "{{ awg_tools_source }}/src/{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: "{{ item.mode }}"
+  loop:
+    - { src: wg, dest: /usr/bin/awg, mode: "0755" }
+    - { src: wg-quick/linux.bash, dest: /usr/bin/awg-quick, mode: "0755" }
+    - { src: systemd/wg-quick@.service, dest: /etc/systemd/system/awg-quick@.service, mode: "0644" }
+    - { src: systemd/wg-quick.target, dest: /etc/systemd/system/awg-quick.target, mode: "0644" }
+  loop_control:
+    label: "{{ item.dest }}"
+
+- name: Подготовить исходники DKMS
+  ansible.builtin.command:
+    argv: [make, -C, "{{ awg_kernel_source }}/src", dkms-install, "DKMSDIR=/usr/src/amneziawg-{{ awg_dkms_version }}"]
+    creates: "/var/lib/dkms/amneziawg/{{ awg_dkms_version }}/source"
+
+- name: Задать версию сборки DKMS
+  ansible.builtin.lineinfile:
+    path: "/usr/src/amneziawg-{{ awg_dkms_version }}/{{ item.file }}"
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - file: dkms.conf
+      regexp: "^PACKAGE_VERSION="
+      line: 'PACKAGE_VERSION="{{ awg_dkms_version }}"'
+    - file: Makefile
+      regexp: "^WIREGUARD_VERSION ="
+      line: "WIREGUARD_VERSION = {{ awg_dkms_version }}"
+  loop_control:
+    label: "{{ item.file }}"
+
+- name: Зарегистрировать модуль DKMS
+  ansible.builtin.command:
+    argv: [dkms, add, -m, amneziawg, -v, "{{ awg_dkms_version }}"]
+    creates: "/var/lib/dkms/amneziawg/{{ awg_dkms_version }}/source"
+
+- name: Проверить установленную сборку
+  ansible.builtin.command: dkms status
+  register: awg_dkms_status
+  changed_when: false
+
+- name: Собрать и установить модуль ядра
+  ansible.builtin.command:
+    argv: [dkms, install, -m, amneziawg, -v, "{{ awg_dkms_version }}", -k, "{{ ansible_facts.kernel }}"]
+  when: >-
+    not (awg_dkms_status.stdout is search('amneziawg/' ~ awg_dkms_version ~ ', ' ~ (ansible_facts.kernel | regex_escape) ~ ', [^\n]+: installed'))
+  changed_when: true
+
+- name: Загрузить модуль AWG
+  community.general.modprobe:
+    name: amneziawg
+    state: present

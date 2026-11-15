@@ -1,0 +1,98 @@
+---
+- name: Проверить операцию и имя клиента
+  ansible.builtin.assert:
+    that:
+      - users_operation in ['reconcile', 'add', 'remove', 'list', 'export']
+      - users_operation in ['reconcile', 'list'] or (client_name | default('') is match('^[a-zA-Z0-9][a-zA-Z0-9_-]{0,47}$'))
+
+- name: Заблокировать реестр
+  ansible.builtin.command:
+    argv: [mkdir, "{{ awg_state_dir }}/.lock"]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Обновить реестр и клиентов
+  block:
+    - name: Прочитать или создать клиента
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/state.py"
+          - "{{ users_operation if users_operation == 'add' else ('revoke' if users_operation == 'remove' else 'read') }}"
+          - --state
+          - "{{ awg_state_dir }}/state.json"
+          - --name
+          - '{{ client_name | default("") }}'
+      delegate_to: localhost
+      become: false
+      register: users_state_result
+      changed_when: (users_state_result.stdout | from_json).changed
+      no_log: true
+
+    - name: Загрузить реестр
+      ansible.builtin.set_fact:
+        users_registry: "{{ (users_state_result.stdout | from_json).state }}"
+      no_log: true
+
+    - name: Проверить наличие клиента
+      ansible.builtin.assert:
+        that:
+          - client_name in users_registry.clients
+          - not users_registry.clients[client_name].get('revoked', false)
+        fail_msg: Клиент не найден.
+      when: users_operation == 'export'
+      no_log: true
+
+    - name: Применить список клиентов
+      ansible.builtin.include_role:
+        name: awg
+        tasks_from: clients
+      vars:
+        awg_registry: "{{ users_registry }}"
+      when: users_operation in ['add', 'remove', 'reconcile']
+
+    - name: Завершить отзыв клиента
+      ansible.builtin.command:
+        argv:
+          - "{{ ansible_playbook_python }}"
+          - "{{ playbook_dir }}/../scripts/state.py"
+          - remove
+          - --state
+          - "{{ awg_state_dir }}/state.json"
+          - --name
+          - "{{ client_name }}"
+      delegate_to: localhost
+      become: false
+      register: users_remove_result
+      changed_when: (users_remove_result.stdout | from_json).changed
+      no_log: true
+      when: users_operation == 'remove'
+
+    - name: Удалить профиль клиента
+      ansible.builtin.file:
+        path: "{{ awg_state_dir }}/clients/{{ client_name }}"
+        state: absent
+      delegate_to: localhost
+      become: false
+      when: users_operation == 'remove'
+
+    - name: Выдать профиль клиента
+      ansible.builtin.include_tasks: export.yml
+      when: users_operation in ['add', 'export']
+
+    - name: Показать клиентов
+      ansible.builtin.debug:
+        msg: |-
+          {% for name, client in users_registry.clients | dictsort %}
+          {{ name }}: {{ client.address }}{{ ' (отозван)' if client.get('revoked', false) else '' }}
+          {% endfor %}
+      when: users_operation == 'list'
+  always:
+    - name: Разблокировать реестр
+      ansible.builtin.file:
+        path: "{{ awg_state_dir }}/.lock"
+        state: absent
+      delegate_to: localhost
+      become: false
+      changed_when: false

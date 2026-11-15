@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+umask 077
+directory=$(mktemp -d)
+namespace="awgcheck-$$"
+cleanup() { ip netns del "$namespace" 2>/dev/null || true; rm -rf "$directory"; }
+trap cleanup EXIT
+cp "$1" "$directory/check.conf"
+awg-quick strip "$directory/check.conf" > "$directory/stripped.conf"
+ip netns add "$namespace"
+ip -n "$namespace" link add check type amneziawg
+ip netns exec "$namespace" awg setconf check "$directory/stripped.conf"

@@ -1,0 +1,11 @@
+---
+- name: Управление VPN-клиентами
+  hosts: jump
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Обновить клиентов
+      ansible.builtin.import_role:
+        name: users
+        tasks_from: manage
+      tags: [always]

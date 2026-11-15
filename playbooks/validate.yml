@@ -1,0 +1,11 @@
+---
+- name: Проверить VPN
+  hosts: jump:gateway
+  become: true
+  gather_facts: true
+  serial: 1
+  tasks:
+    - name: Проверить AWG и маршрутизацию
+      ansible.builtin.import_role:
+        name: awg
+        tasks_from: validate

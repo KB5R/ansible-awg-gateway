@@ -1,0 +1,35 @@
+---
+- name: Создать каталог клиента
+  ansible.builtin.file:
+    path: "{{ awg_state_dir }}/clients/{{ client_name }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Сохранить профиль клиента
+  ansible.builtin.template:
+    src: client.conf.j2
+    dest: "{{ awg_state_dir }}/clients/{{ client_name }}/{{ client_name }}.conf"
+    mode: "0600"
+  delegate_to: localhost
+  become: false
+  no_log: true
+
+- name: Создать QR и ссылку
+  ansible.builtin.command:
+    argv:
+      - "{{ ansible_playbook_python }}"
+      - "{{ playbook_dir }}/../scripts/state.py"
+      - export
+      - --conf
+      - "{{ awg_state_dir }}/clients/{{ client_name }}/{{ client_name }}.conf"
+  delegate_to: localhost
+  become: false
+  no_log: true
+  register: users_export_result
+  changed_when: (users_export_result.stdout | from_json).changed
+
+- name: Показать путь к профилю
+  ansible.builtin.debug:
+    msg: "Клиент {{ client_name }}: {{ awg_state_dir }}/clients/{{ client_name }}/ (conf, png, url)."

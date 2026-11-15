@@ -1,0 +1,55 @@
+#!/usr/sbin/nft -f
+# This project owns the firewall on dedicated VPN nodes.
+flush ruleset
+table inet awg_gateway {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    iifname "lo" accept
+    ct state invalid drop
+    ct state established,related accept
+    ip protocol icmp accept
+    meta l4proto ipv6-icmp accept
+    tcp dport {{ awg_ssh_port }} accept
+    iifname "{{ awg_external_interface }}" udp sport 67 udp dport 68 accept
+    iifname "{{ awg_external_interface }}" udp sport 547 udp dport 546 accept
+{% if 'jump' in group_names %}
+    udp dport {{ awg_client_listen_port }} accept
+    ip saddr {{ awg_gateway_public_ip }} udp dport {{ awg_backbone_listen_port }} accept
+{% endif %}
+  }
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+{% if 'jump' in group_names %}
+    iifname "{{ awg_client_interface }}" oifname != "{{ awg_backbone_interface }}" counter drop
+    iifname "{{ awg_client_interface }}" oifname "{{ awg_backbone_interface }}" ip saddr {{ awg_client_subnet }} accept
+    iifname "{{ awg_backbone_interface }}" oifname "{{ awg_client_interface }}" ip daddr {{ awg_client_subnet }} ct state established,related accept
+{% else %}
+    iifname "{{ awg_backbone_interface }}" oifname "{{ awg_external_interface }}" ip saddr {{ awg_client_subnet }} accept
+    iifname "{{ awg_external_interface }}" oifname "{{ awg_backbone_interface }}" ip daddr {{ awg_client_subnet }} ct state established,related accept
+{% endif %}
+  }
+  chain output {
+    type filter hook output priority filter; policy drop;
+    oifname "lo" accept
+    ct state established,related accept
+    ip protocol icmp accept
+    meta l4proto ipv6-icmp accept
+    oifname "{{ awg_external_interface }}" udp sport 68 udp dport 67 accept
+    oifname "{{ awg_external_interface }}" udp sport 546 udp dport 547 accept
+    udp dport { 53, 123 } accept
+    tcp dport { 53, 80, 443 } accept
+{% if 'gateway' in group_names %}
+    ip daddr {{ awg_jump_public_ip }} udp dport {{ awg_backbone_listen_port }} accept
+{% endif %}
+    oifname "{{ awg_backbone_interface }}" ip daddr {{ awg_backbone_subnet }} accept
+{% if 'jump' in group_names %}
+    oifname "{{ awg_backbone_interface }}" ip saddr {{ awg_client_subnet }} accept
+{% endif %}
+  }
+{% if 'gateway' in group_names %}
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr {{ awg_client_subnet }} oifname "{{ awg_external_interface }}" masquerade
+  }
+{% endif %}
+}

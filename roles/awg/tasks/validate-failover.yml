@@ -1,0 +1,35 @@
+---
+- name: Добавить проверочный адрес
+  ansible.builtin.command: "ip address add {{ awg_probe_address }}/32 dev lo"
+  changed_when: false
+
+- name: Проверить запрет утечек
+  block:
+    - name: Остановить backbone
+      ansible.builtin.systemd_service:
+        name: "awg-quick@{{ awg_backbone_interface }}"
+        state: stopped
+
+    - name: Проверить недоступность маршрута
+      ansible.builtin.command: "ip route get 1.1.1.1 from {{ awg_probe_address }}"
+      register: awg_validation_closed_route
+      changed_when: false
+      failed_when: awg_validation_closed_route.rc == 0
+
+    - name: Проверить отсутствие выхода в интернет
+      ansible.builtin.command:
+        argv: [curl, --fail, --silent, --show-error, --max-time, "5", --interface, "{{ awg_probe_address }}", "https://api.ipify.org"]
+      register: awg_validation_closed_request
+      changed_when: false
+      failed_when: awg_validation_closed_request.rc == 0
+  always:
+    - name: Восстановить backbone
+      ansible.builtin.systemd_service:
+        name: "awg-quick@{{ awg_backbone_interface }}"
+        state: started
+    - name: Удалить проверочный адрес
+      ansible.builtin.command: "ip address del {{ awg_probe_address }}/32 dev lo"
+      changed_when: false
+
+- name: Проверить восстановление связи
+  ansible.builtin.include_tasks: validate-egress.yml

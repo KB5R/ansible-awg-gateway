@@ -1,0 +1,7 @@
+---
+awg_tools_commit: ee0f0a9aa34ff0a0da4b3433b9512781cfe02843
+awg_kernel_commit: 63ed35de3d3f135b17e8eae0b84949e7700303be
+awg_dkms_version: "{{ awg_kernel_commit[:12] }}"
+awg_source_dir: /usr/local/src
+awg_tools_source: "{{ awg_source_dir }}/amneziawg-tools-{{ awg_tools_commit }}"
+awg_kernel_source: "{{ awg_source_dir }}/amneziawg-kernel-{{ awg_kernel_commit }}"

@@ -1,0 +1,12 @@
+---
+- name: Проверить настройки
+  ansible.builtin.import_tasks: preflight.yml
+  tags: [always]
+
+- name: Настроить SSH
+  ansible.builtin.import_tasks: ssh.yml
+  tags: [ssh, install]
+
+- name: Применить настройки SSH
+  ansible.builtin.meta: flush_handlers
+  tags: [ssh, install]

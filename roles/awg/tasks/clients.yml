@@ -1,0 +1,19 @@
+---
+- name: Обновить конфигурацию клиентов
+  ansible.builtin.template:
+    src: client-server.conf.j2
+    dest: "/etc/amnezia/amneziawg/{{ awg_client_interface }}.conf"
+    mode: "0600"
+    validate: /usr/local/sbin/awg-validate-config %s
+  no_log: true
+  register: awg_clients_config
+
+- name: Синхронизировать peer
+  ansible.builtin.shell: |
+    set -euo pipefail
+    awg syncconf {{ awg_client_interface | quote }} <(awg-quick strip {{ awg_client_interface | quote }})
+  args:
+    executable: /bin/bash
+  no_log: true
+  changed_when: awg_clients_config.changed
+  # Run even after a previous interrupted deployment with unchanged disk config.

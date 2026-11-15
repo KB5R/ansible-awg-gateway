@@ -1,0 +1,19 @@
+---
+- name: Установить сетевые утилиты
+  ansible.builtin.apt:
+    name: [iproute2, tcpdump, curl, python3]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Настроить сетевой стек
+  ansible.posix.sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    sysctl_file: /etc/sysctl.d/90-awg-gateway.conf
+    sysctl_set: true
+    reload: false
+    state: present
+  loop: "{{ network_sysctl | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"

@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+{% if 'jump' in group_names %}
+# A terminal unreachable route prevents falling through to the public default.
+if [ "$1" = up ]; then
+    ip route replace unreachable default table {{ awg_route_table }} metric 32767
+    ip route replace default dev {{ awg_backbone_interface }} table {{ awg_route_table }} metric 10
+    ip rule del priority {{ awg_rule_priority }} from {{ awg_client_subnet }} table {{ awg_route_table }} 2>/dev/null || true
+    ip rule add priority {{ awg_rule_priority }} from {{ awg_client_subnet }} table {{ awg_route_table }}
+else
+    ip route del default dev {{ awg_backbone_interface }} table {{ awg_route_table }} metric 10 2>/dev/null || true
+    # Keep the rule and unreachable default while the tunnel is down.
+fi
+{% else %}
+if [ "$1" = up ]; then
+    ip route replace {{ awg_client_subnet }} dev {{ awg_backbone_interface }}
+else
+    ip route del {{ awg_client_subnet }} dev {{ awg_backbone_interface }} 2>/dev/null || true
+fi
+{% endif %}

@@ -1,0 +1,44 @@
+---
+- name: Проверить службу клиентов
+  ansible.builtin.systemd_service:
+    name: "awg-quick@{{ awg_client_interface }}"
+  register: awg_validation_client
+  failed_when: awg_validation_client.status.ActiveState != 'active'
+
+- name: Проверить маршрут клиентов
+  ansible.builtin.command: "ip route get 1.1.1.1 from {{ awg_probe_address }} iif {{ awg_client_interface }}"
+  register: awg_validation_route
+  changed_when: false
+  failed_when: awg_backbone_interface not in awg_validation_route.stdout
+
+- name: Прочитать правила forward
+  ansible.builtin.command: nft list chain inet awg_gateway forward
+  register: awg_validation_forward_chain
+  changed_when: false
+
+- name: Проверить запрет выхода через WAN
+  ansible.builtin.assert:
+    that:
+      - (('iifname "' ~ awg_client_interface ~ '" oifname != "' ~ awg_backbone_interface ~ '" counter') in awg_validation_forward_chain.stdout)
+    fail_msg: Нет правила запрета клиентского выхода через WAN.
+
+- name: Добавить проверочный адрес
+  ansible.builtin.command: "ip address add {{ awg_probe_address }}/32 dev lo"
+  changed_when: false
+
+- name: Проверить NAT
+  block:
+    - name: Получить внешний IP
+      ansible.builtin.command:
+        argv: [curl, --fail, --silent, --show-error, --max-time, "20", --interface, "{{ awg_probe_address }}", "https://api.ipify.org"]
+      register: awg_validation_exit
+      changed_when: false
+
+    - name: Сверить IP с gateway
+      ansible.builtin.assert:
+        that: awg_validation_exit.stdout | trim == awg_gateway_public_ip
+        fail_msg: Внешний IP не совпадает с gateway. Проверьте маршруты и NAT.
+  always:
+    - name: Удалить проверочный адрес
+      ansible.builtin.command: "ip address del {{ awg_probe_address }}/32 dev lo"
+      changed_when: false

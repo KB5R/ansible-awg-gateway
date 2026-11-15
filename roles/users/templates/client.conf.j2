@@ -1,0 +1,15 @@
+[Interface]
+Address = {{ users_registry.clients[client_name].address }}/32
+PrivateKey = {{ users_registry.clients[client_name].private }}
+DNS = {{ awg_dns | join(', ') }}
+MTU = {{ awg_mtu }}
+{% for key, value in awg_obfuscation.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+HeaderProtectionKey = {{ users_registry.headers.client }}
+
+[Peer]
+PublicKey = {{ users_registry.nodes.jump.client.public }}
+AllowedIPs = 0.0.0.0/0
+Endpoint = {{ awg_jump_public_ip }}:{{ awg_client_listen_port }}
+PersistentKeepalive = 25

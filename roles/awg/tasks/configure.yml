@@ -1,0 +1,69 @@
+---
+- name: Создать каталог AWG
+  ansible.builtin.file:
+    path: /etc/amnezia/amneziawg
+    state: directory
+    mode: "0700"
+
+- name: Установить проверку конфигурации
+  ansible.builtin.template:
+    src: validate-config.sh.j2
+    dest: /usr/local/sbin/awg-validate-config
+    mode: "0755"
+
+- name: Установить маршруты backbone
+  ansible.builtin.template:
+    src: routes.sh.j2
+    dest: /usr/local/sbin/awg-routes
+    mode: "0755"
+  register: awg_routes_script
+
+- name: Создать каталог настроек службы
+  ansible.builtin.file:
+    path: /etc/systemd/system/awg-quick@.service.d
+    state: directory
+    mode: "0755"
+
+- name: Задать порядок запуска служб
+  ansible.builtin.template:
+    src: service.conf.j2
+    dest: /etc/systemd/system/awg-quick@.service.d/gateway.conf
+    mode: "0644"
+  register: awg_service_override
+
+- name: Обновить конфигурацию backbone
+  ansible.builtin.template:
+    src: backbone.conf.j2
+    dest: "/etc/amnezia/amneziawg/{{ awg_backbone_interface }}.conf"
+    mode: "0600"
+    validate: /usr/local/sbin/awg-validate-config %s
+  no_log: true
+  register: awg_backbone_config
+
+- name: Запустить backbone
+  ansible.builtin.systemd_service:
+    name: "awg-quick@{{ awg_backbone_interface }}"
+    enabled: true
+    daemon_reload: true
+    state: "{{ 'restarted' if awg_backbone_config.changed or awg_routes_script.changed else 'started' }}"
+
+- name: Обновить клиентский интерфейс
+  ansible.builtin.template:
+    src: client-server.conf.j2
+    dest: "/etc/amnezia/amneziawg/{{ awg_client_interface }}.conf"
+    mode: "0600"
+    validate: /usr/local/sbin/awg-validate-config %s
+  when: "'jump' in group_names"
+  no_log: true
+  register: awg_client_config
+
+- name: Запустить клиентский интерфейс
+  ansible.builtin.systemd_service:
+    name: "awg-quick@{{ awg_client_interface }}"
+    enabled: true
+    state: "{{ 'restarted' if awg_client_config.changed else 'started' }}"
+  when: "'jump' in group_names"
+
+- name: Проверить интерфейс backbone
+  ansible.builtin.command: "ip link show {{ awg_backbone_interface }}"
+  changed_when: false

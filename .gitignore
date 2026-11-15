@@ -1,0 +1,9 @@
+inventories/production.ini
+local/
+*.retry
+.ansible/
+__pycache__/
+.venv/
+tests
+ARCHITECTURE.md
+docs

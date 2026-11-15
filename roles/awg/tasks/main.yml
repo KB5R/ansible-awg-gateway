@@ -1,0 +1,68 @@
+---
+- name: Установить AWG
+  ansible.builtin.import_tasks: install.yml
+
+- name: Создать каталог состояния
+  ansible.builtin.file:
+    path: "{{ awg_state_dir }}"
+    state: directory
+    mode: "0700"
+  delegate_to: localhost
+  become: false
+
+- name: Проверить локальный реестр
+  ansible.builtin.stat:
+    path: "{{ awg_state_dir }}/state.json"
+  delegate_to: localhost
+  become: false
+  register: awg_local_state
+
+- name: Проверить конфигурацию сервера
+  ansible.builtin.stat:
+    path: "/etc/amnezia/amneziawg/{{ awg_backbone_interface }}.conf"
+  register: awg_existing_config
+
+- name: Защитить существующие ключи
+  ansible.builtin.assert:
+    that: awg_local_state.stat.exists or not awg_existing_config.stat.exists
+    fail_msg: "Восстановите local/state.json из резервной копии: сервер уже настроен."
+
+- name: Заблокировать реестр
+  ansible.builtin.command:
+    argv: [mkdir, "{{ awg_state_dir }}/.lock"]
+  delegate_to: localhost
+  become: false
+  changed_when: false
+
+- name: Настроить интерфейсы AWG
+  block:
+    - name: Создать или загрузить ключи
+      ansible.builtin.command:
+        argv: ["{{ ansible_playbook_python }}", "{{ playbook_dir }}/../scripts/state.py", init, --state, "{{ awg_state_dir }}/state.json"]
+        stdin: "{{ awg_address_plan | to_json }}"
+      vars:
+        awg_address_plan:
+          client_subnet: "{{ awg_client_subnet }}"
+          backbone_subnet: "{{ awg_backbone_subnet }}"
+          reserved: ['{{ awg_client_server_address.split("/")[0] }}', "{{ awg_probe_address }}"]
+      delegate_to: localhost
+      become: false
+      register: awg_state_result
+      no_log: true
+      changed_when: (awg_state_result.stdout | from_json).changed
+
+    - name: Загрузить реестр
+      ansible.builtin.set_fact:
+        awg_registry: "{{ (awg_state_result.stdout | from_json).state }}"
+      no_log: true
+
+    - name: Настроить интерфейсы
+      ansible.builtin.include_tasks: configure.yml
+  always:
+    - name: Разблокировать реестр
+      ansible.builtin.file:
+        path: "{{ awg_state_dir }}/.lock"
+        state: absent
+      delegate_to: localhost
+      become: false
+      changed_when: false

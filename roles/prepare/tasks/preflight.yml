@@ -1,0 +1,54 @@
+---
+- name: Проверить узлы и интерфейсы
+  ansible.builtin.assert:
+    that:
+      - groups.get('jump', []) | length == 1
+      - groups.get('gateway', []) | length == 1
+      - groups['jump'][0] != groups['gateway'][0]
+      - awg_external_interface is defined
+      - awg_external_interface in ansible_facts.interfaces
+      - awg_external_interface is match('^[a-zA-Z0-9_.:-]{1,15}$')
+      - awg_client_interface is match('^[a-zA-Z0-9_-]{1,15}$')
+      - awg_backbone_interface is match('^[a-zA-Z0-9_-]{1,15}$')
+      - awg_client_interface != awg_backbone_interface
+      - awg_client_listen_port | int != awg_backbone_listen_port | int
+
+- name: Проверить адресацию
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/python3
+      - -c
+      - |
+        import ipaddress, json, sys
+        v = json.load(sys.stdin)
+        client = ipaddress.ip_network(v['client_subnet'])
+        backbone = ipaddress.ip_network(v['backbone_subnet'])
+        assert client.version == backbone.version == 4 and not client.overlaps(backbone)
+        server = ipaddress.ip_interface(v['server'])
+        jump = ipaddress.ip_interface(v['jump'])
+        gateway = ipaddress.ip_interface(v['gateway'])
+        assert server.network == client and jump.network == gateway.network == backbone
+        assert jump.ip != gateway.ip
+        probe = ipaddress.ip_address(v['probe'])
+        assert probe in client and probe not in (client.network_address, client.broadcast_address, server.ip)
+        for name in ('jump_public', 'gateway_public'):
+            assert ipaddress.ip_address(v[name]).version == 4
+        assert v['jump_public'] != v['gateway_public']
+        for port in v['ports']:
+            assert 1 <= int(port) <= 65535
+        assert 1 <= int(v['table']) < 253 and 1 <= int(v['priority']) < 32766
+    stdin: "{{ prepare_address_plan | to_json }}"
+  vars:
+    prepare_address_plan:
+      client_subnet: "{{ awg_client_subnet }}"
+      backbone_subnet: "{{ awg_backbone_subnet }}"
+      server: "{{ awg_client_server_address }}"
+      jump: "{{ awg_jump_address }}"
+      gateway: "{{ awg_gateway_address }}"
+      probe: "{{ awg_probe_address }}"
+      jump_public: "{{ awg_jump_public_ip }}"
+      gateway_public: "{{ awg_gateway_public_ip }}"
+      ports: ["{{ awg_ssh_port }}", "{{ awg_client_listen_port }}", "{{ awg_backbone_listen_port }}"]
+      table: "{{ awg_route_table }}"
+      priority: "{{ awg_rule_priority }}"
+  changed_when: false

@@ -1,0 +1,14 @@
+[Interface]
+Address = {{ awg_client_server_address }}
+PrivateKey = {{ awg_registry.nodes.jump.client.private }}
+ListenPort = {{ awg_client_listen_port }}
+MTU = {{ awg_mtu }}
+{% set awg_profile = 'client' %}
+{% include 'obfuscation.j2' %}
+{% for name, client in awg_registry.clients | dictsort if not client.get('revoked', false) %}
+
+# {{ name }}
+[Peer]
+PublicKey = {{ client.public }}
+AllowedIPs = {{ client.address }}/32
+{% endfor %}

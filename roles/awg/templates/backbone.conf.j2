@@ -1,0 +1,20 @@
+[Interface]
+Address = {{ awg_backbone_address }}
+PrivateKey = {{ awg_registry.nodes['jump' if 'jump' in group_names else 'gateway'].backbone.private }}
+ListenPort = {{ awg_backbone_listen_port }}
+MTU = {{ awg_mtu }}
+Table = off
+PostUp = /usr/local/sbin/awg-routes up
+PreDown = /usr/local/sbin/awg-routes down
+{% set awg_profile = 'backbone' %}
+{% include 'obfuscation.j2' %}
+
+[Peer]
+PublicKey = {{ awg_registry.nodes['gateway' if 'jump' in group_names else 'jump'].backbone.public }}
+{% if 'jump' in group_names %}
+AllowedIPs = 0.0.0.0/0
+{% else %}
+AllowedIPs = {{ awg_client_subnet }}, {{ awg_jump_address.split('/')[0] }}/32
+Endpoint = {{ awg_jump_public_ip }}:{{ awg_backbone_listen_port }}
+PersistentKeepalive = 25
+{% endif %}

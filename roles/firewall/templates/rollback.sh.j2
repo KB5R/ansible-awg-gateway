@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+exec 9>/var/lib/awg-firewall/transaction.lock
+flock -x 9
+test -f /var/lib/awg-firewall/armed || exit 0
+/usr/sbin/nft -f /var/lib/awg-firewall/previous.rules
+if test -f /var/lib/awg-firewall/previous.conf; then
+    cp /var/lib/awg-firewall/previous.conf /etc/nftables.conf
+else
+    rm -f /etc/nftables.conf
+fi
+rm -f /var/lib/awg-firewall/armed

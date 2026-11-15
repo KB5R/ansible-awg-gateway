@@ -1,0 +1,93 @@
+---
+- name: Перезагрузить узел
+  ansible.builtin.reboot:
+    reboot_timeout: 300
+  tags: [never, reboot]
+
+- name: Проверить службу backbone
+  ansible.builtin.systemd_service:
+    name: "awg-quick@{{ awg_backbone_interface }}"
+  register: awg_validation_backbone
+  failed_when: >-
+    awg_validation_backbone.status.ActiveState != 'active' or
+    awg_validation_backbone.status.UnitFileState != 'enabled'
+  tags: [always]
+
+- name: Проверить firewall
+  ansible.builtin.command: nft list table inet awg_gateway
+  changed_when: false
+  tags: [always]
+
+- name: Проверить forwarding
+  ansible.builtin.command: sysctl -n net.ipv4.ip_forward
+  register: awg_validation_forwarding
+  changed_when: false
+  failed_when: awg_validation_forwarding.stdout != '1'
+  tags: [always]
+
+- name: Проверить связь backbone
+  ansible.builtin.command:
+    argv:
+      - ping
+      - -c
+      - "2"
+      - -W
+      - "5"
+      - "-I"
+      - "{{ awg_backbone_interface }}"
+      - "{{ (awg_gateway_address if 'jump' in group_names else awg_jump_address).split('/')[0] }}"
+  register: awg_validation_ping
+  retries: 6
+  delay: 5
+  until: awg_validation_ping.rc == 0
+  changed_when: false
+  tags: [always]
+
+- name: Проверить свежесть handshake
+  ansible.builtin.shell: |
+    set -euo pipefail
+    now=$(date +%s)
+    awg show {{ awg_backbone_interface | quote }} latest-handshakes | awk -v now="$now" 'BEGIN {ok=0} $2 > 0 && now-$2 < 180 {ok=1} END {exit !ok}'
+  args:
+    executable: /bin/bash
+  changed_when: false
+  tags: [always]
+
+- name: Проверить выход через gateway
+  ansible.builtin.include_tasks:
+    file: validate-egress.yml
+    apply:
+      tags: [always]
+  when: "'jump' in group_names"
+  tags: [always]
+
+- name: Проверить отказ и восстановление
+  ansible.builtin.include_tasks:
+    file: validate-failover.yml
+    apply:
+      tags: [failover]
+  when: "'jump' in group_names"
+  tags: [never, failover]
+
+- name: Проверить UDP-обмен
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "10"
+      - tcpdump
+      - "-i"
+      - "{{ awg_external_interface }}"
+      - "-nn"
+      - "-q"
+      - "-s"
+      - "64"
+      - 'udp port {{ awg_backbone_listen_port }} and host {{ awg_gateway_public_ip if "jump" in group_names else awg_jump_public_ip }}'
+  register: awg_validation_udp
+  changed_when: false
+  failed_when: awg_validation_udp.rc not in [0, 124]
+  tags: [never, udp]
+
+- name: Показать заголовки UDP
+  ansible.builtin.debug:
+    var: awg_validation_udp.stdout_lines
+  tags: [never, udp]

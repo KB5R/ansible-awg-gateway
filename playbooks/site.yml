@@ -1,0 +1,41 @@
+---
+- name: Настроить VPN-инфраструктуру
+  hosts: jump:gateway
+  become: true
+  gather_facts: true
+  serial: 1
+
+  tasks:
+    - name: 00 | Подготовить сервер
+      ansible.builtin.include_role:
+        name: prepare
+      tags: [always]
+
+    - name: 01 | Настроить firewall
+      ansible.builtin.include_role:
+        name: firewall
+        apply:
+          tags: [firewall, install]
+      tags: [firewall, install]
+
+    - name: 02 | Настроить сеть
+      ansible.builtin.include_role:
+        name: network
+        apply:
+          tags: [network, install]
+      tags: [network, install]
+
+    - name: 03 | Настроить AWG
+      ansible.builtin.include_role:
+        name: awg
+        apply:
+          tags: [awg, install]
+      tags: [awg, install]
+
+    - name: 04 | Синхронизировать клиентов
+      ansible.builtin.include_role:
+        name: users
+        apply:
+          tags: [users]
+      when: "'jump' in group_names"
+      tags: [users]

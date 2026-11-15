@@ -1,0 +1,57 @@
+---
+- name: Применить firewall с откатом
+  block:
+    - name: Сохранить прежние правила
+      ansible.builtin.shell: |
+        set -eu
+        test ! -e /var/lib/awg-firewall/armed
+        { echo 'flush ruleset'; nft list ruleset; } > /var/lib/awg-firewall/previous.rules
+        rm -f /var/lib/awg-firewall/previous.conf
+        if test -f /etc/nftables.conf; then
+          cp /etc/nftables.conf /var/lib/awg-firewall/previous.conf
+        fi
+      changed_when: false
+
+    - name: Отметить начало применения
+      ansible.builtin.file:
+        path: /var/lib/awg-firewall/armed
+        state: touch
+        mode: "0600"
+
+    - name: Запустить таймер отката
+      ansible.builtin.command:
+        argv:
+          - systemd-run
+          - --collect
+          - --unit=awg-firewall-rollback
+          - "--on-active={{ firewall_rollback_seconds }}s"
+          - /var/lib/awg-firewall/rollback.sh
+      changed_when: true
+
+    - name: Применить новые правила
+      ansible.builtin.command: nft -f /var/lib/awg-firewall/candidate.conf
+      changed_when: true
+
+    - name: Переподключить SSH
+      ansible.builtin.meta: reset_connection
+
+    - name: Проверить доступ по SSH
+      ansible.builtin.wait_for_connection:
+        timeout: 45
+        connect_timeout: 5
+
+    - name: Подтвердить новые правила
+      ansible.builtin.command: /var/lib/awg-firewall/commit.sh
+      changed_when: true
+
+    - name: Остановить таймер отката
+      ansible.builtin.systemd_service:
+        name: awg-firewall-rollback.timer
+        state: stopped
+  rescue:
+    - name: Восстановить прежние правила
+      ansible.builtin.command: /var/lib/awg-firewall/rollback.sh
+      changed_when: true
+    - name: Сообщить об ошибке firewall
+      ansible.builtin.fail:
+        msg: Ошибка применения firewall. Прежние правила восстанавливаются немедленно или по таймеру.

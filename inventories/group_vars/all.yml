@@ -1,0 +1,43 @@
+---
+awg_client_subnet: 10.70.0.0/24
+awg_client_server_address: 10.70.0.1/24
+awg_backbone_subnet: 10.71.0.0/30
+awg_jump_address: 10.71.0.1/30
+awg_gateway_address: 10.71.0.2/30
+awg_client_interface: awg-client
+awg_backbone_interface: awg-backbone
+awg_client_listen_port: 51820
+awg_backbone_listen_port: 51821
+awg_ssh_port: 22
+ansible_port: "{{ awg_ssh_port }}"
+awg_mtu: 1280
+awg_dns: [1.1.1.1, 9.9.9.9]
+awg_route_table: 170
+awg_rule_priority: 170
+awg_state_dir: "{{ playbook_dir }}/../local"
+awg_jump_host: "{{ groups['jump'][0] }}"
+awg_gateway_host: "{{ groups['gateway'][0] }}"
+awg_jump_public_ip: "{{ hostvars[awg_jump_host].ansible_host }}"
+awg_gateway_public_ip: "{{ hostvars[awg_gateway_host].ansible_host }}"
+awg_probe_address: 10.70.0.254
+awg_obfuscation:
+  Jc: 3
+  Jmin: 10
+  Jmax: 30
+  S1: 12
+  S2: 12
+  S3: 12
+  S4: 12
+  H1: 1
+  H2: 2
+  H3: 3
+  H4: 4
+  ContentPaddingAddition: 10-100
+  RekeyAfterTime: 100-120
+  RekeyTimeout: 3-7
+  RejectAfterTime: 150-180
+  KeepaliveTimeout: 5-15
+  MaxHandshakeAttempts: 15-20
+  RandomTrailers: "on"
+  DisableCookies: "off"
+ansible_ssh_common_args: "-o PasswordAuthentication=no -o KbdInteractiveAuthentication=no"
