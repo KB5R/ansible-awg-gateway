@@ -47,11 +47,20 @@ python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements-controller.txt
 ansible-galaxy collection install -r collections/requirements.yml
-cp inventories/example.ini inventories/production.ini
 ```
 
-Заполните `production.ini`: публичные IPv4, SSH-пользователя и внешний интерфейс
-каждого узла. Подсети, порты, MTU и DNS задаются в `inventories/group_vars/all.yml`.
+Создайте и заполните `inventory.ini` в корне проекта. Этот локальный файл исключён из Git:
+
+```ini
+[jump]
+jump-node ansible_host=JUMP_PUBLIC_IP ansible_user=ADMIN_USER awg_external_interface=EXTERNAL_INTERFACE
+
+[gateway]
+gateway-node ansible_host=GATEWAY_PUBLIC_IP ansible_user=ADMIN_USER awg_external_interface=EXTERNAL_INTERFACE
+```
+
+Укажите публичные IPv4, SSH-пользователя и внешний интерфейс каждого узла.
+Подсети, порты, MTU и DNS задаются в `group_vars/all.yml`.
 Проверьте, что адресация не пересекается с существующей сетью.
 
 ```bash

@@ -1,4 +1,4 @@
-inventories/production.ini
+/inventory.ini
 local/
 *.retry
 .ansible/
