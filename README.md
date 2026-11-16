@@ -5,7 +5,7 @@
 Проект использует два сервера (`jump` и `gateway`) и два независимых туннеля AmneziaWG 3.1: клиентский доступ и межсерверный канал.
 
 ```text
-iPhone / Windows / Linux
+iPhone / Windows / Linux / Android / и тд
           |
           | AWG 3.1 (клиентский доступ)
           v
