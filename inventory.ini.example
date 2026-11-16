@@ -1,0 +1,9 @@
+[jump]
+jump-node ansible_host=16.17.18.19 awg_external_interface=eth0
+
+[gateway]
+gateway-node ansible_host=12.13.14.15 awg_external_interface=eth0
+
+[all:vars]
+ansible_user=root
+ansible_ssh_private_key_file=/home/ansible_user/.ssh/id_ed25519
